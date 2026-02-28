@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { HeartButton } from './components/heart-button'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
@@ -35,9 +36,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="border-t border-[#e5e7eb] mt-24">
           <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
             <span className="text-xs text-[#6b7280]">Builder Pulse</span>
-            <span className="text-xs text-[#6b7280]">
-              Signals from GitHub · Hacker News · Reddit
-            </span>
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-[#9ca3af]">
+                Signals from GitHub · Hacker News · Reddit
+              </span>
+              <HeartButton />
+            </div>
           </div>
         </footer>
       </body>

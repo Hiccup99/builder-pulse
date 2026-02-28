@@ -1,4 +1,5 @@
 import { TrendGrid } from './components/trend-grid'
+import { SourceFeedback } from './components/source-feedback'
 import type { TrendSummary } from '@/lib/types'
 
 async function getTrends(): Promise<TrendSummary[]> {
@@ -37,6 +38,10 @@ export default async function HomePage() {
       </div>
 
       <TrendGrid trends={trends} />
+
+      <div className="mt-16 max-w-lg">
+        <SourceFeedback />
+      </div>
     </div>
   )
 }
