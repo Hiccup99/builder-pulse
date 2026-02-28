@@ -1,0 +1,35 @@
+# Triggers collector and cluster API routes on a schedule.
+# Use this when you're not on Vercel Pro (Vercel Cron requires Pro).
+#
+# Required GitHub secrets:
+#   CRON_SECRET - same value as in your app env (used in Authorization header)
+#   APP_URL     - your deployment URL, e.g. https://builder-pulse.vercel.app
+
+name: Builder Pulse Cron
+
+on:
+  schedule:
+    # Every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  collect-and-cluster:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect GitHub
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/collect/github" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      - name: Collect Hacker News
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/collect/hackernews" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      - name: Collect Reddit
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/collect/reddit" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      - name: Cluster
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/cluster" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
