@@ -19,7 +19,7 @@ export function MomentumBadge({ label }: { label: MomentumLabel }) {
   const { label: text, classes } = config[label] ?? config.new
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${classes}`}
+      className={`inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${classes}`}
     >
       {text}
     </span>

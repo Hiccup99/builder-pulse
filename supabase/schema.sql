@@ -78,6 +78,13 @@ create table support_hearts (
   created_at timestamptz default now()
 );
 
+-- General product feedback messages from users
+create table feedback (
+  id         uuid        primary key default gen_random_uuid(),
+  message    text        not null check (char_length(message) between 1 and 1000),
+  created_at timestamptz default now()
+);
+
 -- ─────────────────────────────────────────────
 -- Indexes
 -- ─────────────────────────────────────────────
@@ -98,6 +105,7 @@ alter table topics             enable row level security;
 alter table topic_posts        enable row level security;
 alter table source_suggestions enable row level security;
 alter table support_hearts     enable row level security;
+alter table feedback           enable row level security;
 
 -- Public read: frontend uses anon key to query trends and posts
 create policy "Public read topics"         on topics         for select using (true);

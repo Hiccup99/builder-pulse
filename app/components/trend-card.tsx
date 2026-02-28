@@ -20,10 +20,12 @@ export function TrendCard({ trend }: { trend: TrendSummary }) {
       className="group block bg-white border border-[#e5e7eb] rounded-xl p-5 hover:border-indigo-200 hover:shadow-sm transition-all duration-150"
     >
       <div className="flex items-start justify-between gap-3 mb-3">
-        <h3 className="text-sm font-semibold text-[#111111] leading-snug group-hover:text-indigo-600 transition-colors line-clamp-2">
+        <h3 className="text-sm font-semibold text-[#111111] leading-snug group-hover:text-indigo-600 transition-colors line-clamp-2 min-w-0">
           {trend.title}
         </h3>
-        <MomentumBadge label={trend.momentum_label} />
+        <div className="shrink-0">
+          <MomentumBadge label={trend.momentum_label} />
+        </div>
       </div>
 
       {trend.description && (

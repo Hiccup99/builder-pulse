@@ -15,7 +15,7 @@ const SUGGESTED_SOURCES = [
   'YouTube',
 ]
 
-export function SourceFeedback() {
+export function SourceFeedback({ className = '' }: { className?: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [custom, setCustom] = useState('')
   const [customList, setCustomList] = useState<string[]>([])
@@ -71,7 +71,7 @@ export function SourceFeedback() {
 
   if (submitted) {
     return (
-      <div className="bg-white border border-[#e5e7eb] rounded-xl p-6 text-center">
+      <div className={`bg-white border border-[#e5e7eb] rounded-xl p-6 text-center flex flex-col items-center justify-center ${className}`}>
         <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center mx-auto mb-3">
           <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -86,7 +86,7 @@ export function SourceFeedback() {
   }
 
   return (
-    <div className="bg-white border border-[#e5e7eb] rounded-xl p-6">
+    <div className={`bg-white border border-[#e5e7eb] rounded-xl p-6 flex flex-col ${className}`}>
       <div className="mb-5">
         <h2 className="text-sm font-semibold text-[#111111] mb-1">
           Where do you track what's happening?
@@ -137,6 +137,7 @@ export function SourceFeedback() {
         <p className="text-xs text-red-500 mb-3">{error}</p>
       )}
 
+      <div className="mt-auto">
       <button
         onClick={submit}
         disabled={selected.size === 0 || loading}
@@ -151,6 +152,7 @@ export function SourceFeedback() {
           </>
         )}
       </button>
+      </div>
     </div>
   )
 }
