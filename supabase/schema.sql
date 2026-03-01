@@ -20,13 +20,22 @@ create table posts (
   id          uuid        primary key default gen_random_uuid(),
   title       text        not null,
   url         text        unique not null,
-  platform    text        not null check (platform in ('github','hackernews','reddit','blog')),
+  platform    text        not null check (platform in ('github','hackernews','reddit','blog','producthunt','npm')),
   author      text,
   description text,
   published_at timestamptz,
-  type        text        not null check (type in ('repo','discussion','article')),
+  type        text        not null check (type in ('repo','discussion','article','product','package')),
   external_id text        unique,
   embedding   vector(1536),
+  github_momentum float default 0,
+  hn_heat     float       default 0,
+  reddit_buzz float       default 0,
+  is_early_breakout boolean default false,
+  signal_label text,
+  layer       text        check (layer in ('promising','trending','hall_of_fame')),
+  velocity    float       default 0,
+  ph_momentum float       default 0,
+  npm_traction float      default 0,
   created_at  timestamptz default now()
 );
 
@@ -38,6 +47,10 @@ create table metrics_history (
   comments     int         default 0,
   upvotes      int         default 0,
   score        int         default 0,
+  forks        int         default 0,
+  contributors int         default 0,
+  downloads_weekly int     default 0,
+  download_growth float    default 0,
   collected_at timestamptz default now()
 );
 
@@ -94,6 +107,13 @@ create index idx_posts_embedding   on posts using ivfflat (embedding vector_cosi
 create index idx_metrics_post_time on metrics_history(post_id, collected_at desc);
 create index idx_topics_trend      on topics(trend_score desc);
 create index idx_topics_updated    on topics(updated_at desc);
+create index idx_posts_github_momentum on posts(github_momentum desc) where platform = 'github';
+create index idx_posts_hn_heat     on posts(hn_heat desc) where platform = 'hackernews';
+create index idx_posts_reddit_buzz on posts(reddit_buzz desc) where platform = 'reddit';
+create index idx_posts_breakout    on posts(is_early_breakout) where is_early_breakout = true;
+create index idx_posts_layer       on posts(layer) where layer is not null;
+create index idx_posts_ph_momentum on posts(ph_momentum desc) where platform = 'producthunt';
+create index idx_posts_npm_traction on posts(npm_traction desc) where platform = 'npm';
 
 -- ─────────────────────────────────────────────
 -- Row-level security

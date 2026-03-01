@@ -89,6 +89,8 @@ function PlatformSection({
     hackernews: 'Hacker News Discussions',
     reddit: 'Reddit Threads',
     blog: 'Articles & Blogs',
+    producthunt: 'Product Hunt Launches',
+    npm: 'npm Packages',
   }
 
   return (

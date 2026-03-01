@@ -19,7 +19,7 @@ interface GitHubSearchResponse {
 
 async function fetchTrendingRepos(): Promise<GitHubRepo[]> {
   const yesterday = new Date(Date.now() - 86400 * 1000).toISOString().split('T')[0]
-  const url = `https://api.github.com/search/repositories?q=stars:>100+pushed:>${yesterday}&sort=stars&order=desc&per_page=50`
+  const url = `https://api.github.com/search/repositories?q=stars:>50+pushed:>${yesterday}&sort=stars&order=desc&per_page=50`
 
   const res = await fetch(url, {
     headers: {
@@ -84,16 +84,18 @@ export async function runGitHubCollector(): Promise<{ collected: number; errors:
           post_id: existing.id,
           stars: repo.stargazers_count,
           comments: repo.open_issues_count,
-          upvotes: repo.forks_count,
+          upvotes: 0,
           score: repo.stargazers_count,
+          forks: repo.forks_count,
         })
       } else if (post) {
         await supabase.from('metrics_history').insert({
           post_id: post.id,
           stars: repo.stargazers_count,
           comments: repo.open_issues_count,
-          upvotes: repo.forks_count,
+          upvotes: 0,
           score: repo.stargazers_count,
+          forks: repo.forks_count,
         })
       }
 

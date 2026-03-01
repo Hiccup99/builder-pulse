@@ -31,6 +31,8 @@ const SUBREDDITS = [
   'golang',
   'LocalLLaMA',
   'opensource',
+  'startups',
+  'SideProject',
 ]
 
 async function fetchSubreddit(sub: string): Promise<RedditPost['data'][]> {

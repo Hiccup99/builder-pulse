@@ -1,26 +1,17 @@
 import { createServerClient } from '@/lib/supabase/server'
+import { computeGitHubMomentum } from './github-momentum'
+import { computeHNHeat } from './hn-heat'
+import { computeRedditBuzz } from './reddit-buzz'
+import { computePHMomentum } from './ph-momentum'
+import { computeNpmTraction } from './npm-traction'
+import { detectBreakouts } from './breakout'
+import { classifyAllRecentPosts } from './layers'
 
 export interface PostMomentum {
   postId: string
   platform: string
-  starVelocity: number
-  commentVelocity: number
-  upvoteVelocity: number
   momentumScore: number
   label: 'new' | 'rising' | 'exploding'
-}
-
-interface MetricSnapshot {
-  stars: number
-  comments: number
-  upvotes: number
-  score: number
-  collected_at: string
-}
-
-function computeVelocity(current: number, previous: number, hoursDelta: number): number {
-  if (hoursDelta <= 0) return 0
-  return Math.max(0, (current - previous) / hoursDelta)
 }
 
 function getMomentumLabel(score: number): 'new' | 'rising' | 'exploding' {
@@ -29,92 +20,120 @@ function getMomentumLabel(score: number): 'new' | 'rising' | 'exploding' {
   return 'new'
 }
 
-export async function computeMomentumForPosts(postIds: string[]): Promise<PostMomentum[]> {
-  const supabase = createServerClient()
-  const results: PostMomentum[] = []
-
-  if (postIds.length === 0) return results
-
-  const { data: metrics } = await supabase
-    .from('metrics_history')
-    .select('post_id, stars, comments, upvotes, score, collected_at')
-    .in('post_id', postIds)
-    .order('collected_at', { ascending: false })
-
-  if (!metrics) return results
-
-  const byPost = new Map<string, MetricSnapshot[]>()
-  for (const m of metrics) {
-    const list = byPost.get(m.post_id) ?? []
-    list.push(m)
-    byPost.set(m.post_id, list)
-  }
-
-  const { data: posts } = await supabase
-    .from('posts')
-    .select('id, platform')
-    .in('id', postIds)
-
-  const platformMap = new Map<string, string>()
-  for (const p of posts ?? []) {
-    platformMap.set(p.id, p.platform)
-  }
-
-  for (const [postId, snapshots] of byPost.entries()) {
-    if (snapshots.length < 1) continue
-
-    const latest = snapshots[0]
-    const previous = snapshots[1] ?? null
-
-    let starVelocity = 0
-    let commentVelocity = 0
-    let upvoteVelocity = 0
-
-    if (previous) {
-      const latestTime = new Date(latest.collected_at).getTime()
-      const prevTime = new Date(previous.collected_at).getTime()
-      const hoursDelta = (latestTime - prevTime) / 3_600_000
-
-      starVelocity = computeVelocity(latest.stars, previous.stars, hoursDelta)
-      commentVelocity = computeVelocity(latest.comments, previous.comments, hoursDelta)
-      upvoteVelocity = computeVelocity(latest.upvotes, previous.upvotes, hoursDelta)
-    } else {
-      // First snapshot: use absolute values scaled down as a baseline
-      starVelocity = latest.stars / 24
-      commentVelocity = latest.comments / 24
-      upvoteVelocity = latest.upvotes / 24
-    }
-
-    const momentumScore =
-      starVelocity * 0.5 + commentVelocity * 0.3 + upvoteVelocity * 0.2
-
-    results.push({
-      postId,
-      platform: platformMap.get(postId) ?? 'unknown',
-      starVelocity,
-      commentVelocity,
-      upvoteVelocity,
-      momentumScore,
-      label: getMomentumLabel(momentumScore),
-    })
-  }
-
-  return results
-}
-
-export async function computeMomentumForAllRecentPosts(
-  hoursBack = 48
-): Promise<PostMomentum[]> {
+export async function computeAndStorePlatformScores(hoursBack = 48): Promise<number> {
   const supabase = createServerClient()
   const since = new Date(Date.now() - hoursBack * 3_600_000).toISOString()
 
   const { data: recentPosts } = await supabase
     .from('posts')
-    .select('id')
+    .select('id, platform')
     .gte('created_at', since)
 
-  if (!recentPosts || recentPosts.length === 0) return []
+  if (!recentPosts || recentPosts.length === 0) return 0
 
-  const ids = recentPosts.map((p) => p.id)
-  return computeMomentumForPosts(ids)
+  const byPlatform = (p: string) => recentPosts.filter((r) => r.platform === p).map((r) => r.id)
+
+  const githubIds = byPlatform('github')
+  const hnIds = byPlatform('hackernews')
+  const redditIds = byPlatform('reddit')
+  const phIds = byPlatform('producthunt')
+  const npmIds = byPlatform('npm')
+
+  const [ghScores, hnScores, rdScores, phScores, npmScores] = await Promise.all([
+    computeGitHubMomentum(githubIds),
+    computeHNHeat(hnIds),
+    computeRedditBuzz(redditIds),
+    computePHMomentum(phIds),
+    computeNpmTraction(npmIds),
+  ])
+
+  for (const gh of ghScores) {
+    const label = getMomentumLabel(gh.score)
+    await supabase
+      .from('posts')
+      .update({
+        github_momentum: gh.score,
+        signal_label: label === 'exploding' ? 'Hot Repo' : label === 'rising' ? 'Gaining Traction' : null,
+      })
+      .eq('id', gh.postId)
+  }
+
+  for (const hn of hnScores) {
+    const label = getMomentumLabel(hn.score)
+    await supabase
+      .from('posts')
+      .update({
+        hn_heat: hn.score,
+        signal_label: label === 'exploding' ? 'Hot Discussion' : label === 'rising' ? 'Active Discussion' : null,
+      })
+      .eq('id', hn.postId)
+  }
+
+  for (const rd of rdScores) {
+    const label = getMomentumLabel(rd.score)
+    await supabase
+      .from('posts')
+      .update({
+        reddit_buzz: rd.score,
+        signal_label: label === 'exploding' ? 'Community Buzz' : label === 'rising' ? 'Gaining Buzz' : null,
+      })
+      .eq('id', rd.postId)
+  }
+
+  for (const ph of phScores) {
+    const label = getMomentumLabel(ph.score)
+    await supabase
+      .from('posts')
+      .update({
+        ph_momentum: ph.score,
+        signal_label: label === 'exploding' ? 'Hot Launch' : label === 'rising' ? 'Rising Product' : null,
+      })
+      .eq('id', ph.postId)
+  }
+
+  for (const npm of npmScores) {
+    const label = getMomentumLabel(npm.score)
+    await supabase
+      .from('posts')
+      .update({
+        npm_traction: npm.score,
+        signal_label: label === 'exploding' ? 'Exploding Package' : label === 'rising' ? 'Growing Package' : null,
+      })
+      .eq('id', npm.postId)
+  }
+
+  await detectBreakouts(ghScores)
+  await classifyAllRecentPosts(hoursBack)
+
+  return ghScores.length + hnScores.length + rdScores.length + phScores.length + npmScores.length
+}
+
+export async function computeMomentumForPosts(postIds: string[]): Promise<PostMomentum[]> {
+  if (postIds.length === 0) return []
+  const supabase = createServerClient()
+
+  const { data: posts } = await supabase
+    .from('posts')
+    .select('id, platform, github_momentum, hn_heat, reddit_buzz, ph_momentum, npm_traction')
+    .in('id', postIds)
+
+  if (!posts) return []
+
+  return posts.map((p) => {
+    let score = 0
+    switch (p.platform) {
+      case 'github': score = p.github_momentum ?? 0; break
+      case 'hackernews': score = p.hn_heat ?? 0; break
+      case 'reddit': score = p.reddit_buzz ?? 0; break
+      case 'producthunt': score = p.ph_momentum ?? 0; break
+      case 'npm': score = p.npm_traction ?? 0; break
+    }
+
+    return {
+      postId: p.id,
+      platform: p.platform,
+      momentumScore: score,
+      label: getMomentumLabel(score),
+    }
+  })
 }

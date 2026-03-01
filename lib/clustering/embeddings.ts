@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import { createServerClient } from '@/lib/supabase/server'
-import { computeMomentumForPosts } from '@/lib/scoring/momentum'
+import { computeMomentumForPosts, computeAndStorePlatformScores } from '@/lib/scoring/momentum'
 import { computeTopicScore } from '@/lib/scoring/ranking'
 
 const SIMILARITY_THRESHOLD = 0.3
@@ -65,7 +65,7 @@ export async function runClusteringJob(): Promise<{ processed: number; topicsCre
     .limit(100)
 
   if (!unembedded || unembedded.length === 0) {
-    // Still recompute trend scores even if no new embeddings
+    await computeAndStorePlatformScores(48)
     await recomputeAllTopicScores()
     return { processed: 0, topicsCreated: 0, topicsUpdated: 0 }
   }
@@ -198,7 +198,10 @@ export async function runClusteringJob(): Promise<{ processed: number; topicsCre
     }
   }
 
-  // Step 4: Recompute trend scores for all topics
+  // Step 4: Compute per-platform scores + breakout detection
+  await computeAndStorePlatformScores(48)
+
+  // Step 5: Recompute trend scores for all topics
   await recomputeAllTopicScores()
 
   return { processed, topicsCreated, topicsUpdated }

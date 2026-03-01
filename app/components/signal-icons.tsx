@@ -5,6 +5,8 @@ const PLATFORM_CONFIG: Record<Platform, { label: string; icon: string; color: st
   hackernews: { label: 'HN', icon: 'HN', color: 'bg-orange-500 text-white' },
   reddit: { label: 'Reddit', icon: 'RE', color: 'bg-red-500 text-white' },
   blog: { label: 'Blog', icon: 'BL', color: 'bg-violet-500 text-white' },
+  producthunt: { label: 'PH', icon: 'PH', color: 'bg-orange-600 text-white' },
+  npm: { label: 'npm', icon: 'NP', color: 'bg-red-600 text-white' },
 }
 
 export function SignalIcons({ platforms }: { platforms: Platform[] }) {

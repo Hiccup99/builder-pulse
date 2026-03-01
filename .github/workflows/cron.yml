@@ -29,6 +29,14 @@ jobs:
         run: |
           curl -sf -X POST "${{ secrets.APP_URL }}/api/collect/reddit" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      - name: Collect Product Hunt
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/collect/producthunt" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      - name: Collect npm
+        run: |
+          curl -sf -X POST "${{ secrets.APP_URL }}/api/collect/npm" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
       - name: Cluster
         run: |
           curl -sf -X POST "${{ secrets.APP_URL }}/api/cluster" \
