@@ -1,13 +1,13 @@
 import { createServerClient } from '@/lib/supabase/server'
 
+// Fewer keywords, smaller result set per keyword — keeps total packages ~40-50
 const SEARCH_KEYWORDS = [
-  'framework', 'cli tool', 'bundler', 'AI agent', 'LLM',
-  'react component', 'database', 'typescript utility', 'developer tool',
-  'api client', 'testing', 'serverless', 'edge runtime',
+  'framework', 'cli', 'bundler', 'AI agent', 'LLM',
+  'typescript', 'testing', 'serverless', 'database',
 ]
 
 const NPM_SEARCH_URL = 'https://registry.npmjs.org/-/v1/search'
-const NPM_DOWNLOADS_URL = 'https://api.npmjs.org/downloads/point'
+const NPM_DOWNLOADS_URL = 'https://api.npmjs.org/downloads/point/last-week'
 
 interface NpmSearchResult {
   objects: Array<{
@@ -18,89 +18,122 @@ interface NpmSearchResult {
       author?: { name?: string }
       date: string
     }
-    score: { detail: { popularity: number; quality: number; maintenance: number } }
   }>
 }
 
-interface NpmDownloads {
-  downloads: number
-  package: string
+interface NpmBulkDownloads {
+  [pkg: string]: { downloads: number } | null
 }
 
-async function fetchDownloads(pkg: string, period: string): Promise<number> {
+async function searchKeyword(keyword: string): Promise<NpmSearchResult['objects']> {
   try {
-    const res = await fetch(`${NPM_DOWNLOADS_URL}/${period}/${pkg}`)
-    if (!res.ok) return 0
-    const data = (await res.json()) as NpmDownloads
-    return data.downloads ?? 0
+    const res = await fetch(
+      `${NPM_SEARCH_URL}?text=${encodeURIComponent(keyword)}&size=5&quality=0.5&popularity=0.5`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    if (!res.ok) return []
+    const data = (await res.json()) as NpmSearchResult
+    return data.objects ?? []
   } catch {
-    return 0
+    return []
   }
+}
+
+async function fetchBulkDownloads(pkgNames: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  if (pkgNames.length === 0) return result
+
+  // npm bulk endpoint accepts comma-separated names, max 128
+  const chunks: string[][] = []
+  for (let i = 0; i < pkgNames.length; i += 100) {
+    chunks.push(pkgNames.slice(i, i + 100))
+  }
+
+  for (const chunk of chunks) {
+    try {
+      const res = await fetch(`${NPM_DOWNLOADS_URL}/${chunk.join(',')}`, {
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!res.ok) continue
+      const data = (await res.json()) as NpmBulkDownloads
+      for (const [name, info] of Object.entries(data)) {
+        result.set(name, info?.downloads ?? 0)
+      }
+    } catch {
+      // skip chunk on error
+    }
+  }
+
+  return result
 }
 
 export async function runNpmCollector(): Promise<{ upserted: number }> {
   const supabase = createServerClient()
+
+  // 1. Run all keyword searches in parallel
+  const results = await Promise.all(SEARCH_KEYWORDS.map(searchKeyword))
+
+  // 2. Deduplicate packages
   const seen = new Set<string>()
-  let upserted = 0
-
-  for (const keyword of SEARCH_KEYWORDS) {
-    try {
-      const res = await fetch(`${NPM_SEARCH_URL}?text=${encodeURIComponent(keyword)}&size=10&quality=0.5&popularity=0.5`)
-      if (!res.ok) continue
-      const data = (await res.json()) as NpmSearchResult
-
-      for (const obj of data.objects) {
-        const pkg = obj.package
-        if (seen.has(pkg.name)) continue
-        seen.add(pkg.name)
-
-        const url = pkg.links?.npm ?? `https://www.npmjs.com/package/${pkg.name}`
-        const [thisWeek, lastWeek] = await Promise.all([
-          fetchDownloads(pkg.name, 'last-week'),
-          fetchDownloads(pkg.name, 'last-week'), // npm API doesn't have "previous week" natively
-        ])
-
-        // Use the search API's date to approximate freshness
-        const repoUrl = pkg.links?.repository ?? pkg.links?.homepage ?? url
-        const growth = lastWeek > 0 ? (thisWeek - lastWeek) / lastWeek : 0
-
-        const { data: post, error } = await supabase
-          .from('posts')
-          .upsert(
-            {
-              title: pkg.name,
-              url: repoUrl,
-              platform: 'npm',
-              author: pkg.author?.name ?? null,
-              description: pkg.description ?? null,
-              published_at: pkg.date,
-              type: 'package' as const,
-              external_id: `npm:${pkg.name}`,
-            },
-            { onConflict: 'external_id' }
-          )
-          .select('id')
-          .single()
-
-        if (error || !post) continue
-
-        await supabase.from('metrics_history').insert({
-          post_id: post.id,
-          downloads_weekly: thisWeek,
-          download_growth: growth,
-          upvotes: 0,
-          stars: 0,
-          comments: 0,
-          score: 0,
-        })
-
-        upserted++
+  const packages: NpmSearchResult['objects'][number]['package'][] = []
+  for (const objects of results) {
+    for (const obj of objects) {
+      if (!seen.has(obj.package.name)) {
+        seen.add(obj.package.name)
+        packages.push(obj.package)
       }
-    } catch (err) {
-      console.error(`[npm] search error for "${keyword}":`, err)
     }
   }
 
-  console.log(`[npm] upserted ${upserted} packages`)
-  return { upserted }
+  if (packages.length === 0) return { upserted: 0 }
+
+  // 3. Fetch all download counts in one bulk request
+  const downloadMap = await fetchBulkDownloads(packages.map((p) => p.name))
+
+  // 4. Batch upsert all posts
+  const postRows = packages.map((pkg) => ({
+    title: pkg.name,
+    url: pkg.links?.repository ?? pkg.links?.homepage ?? pkg.links?.npm ?? `https://www.npmjs.com/package/${pkg.name}`,
+    platform: 'npm' as const,
+    author: pkg.author?.name ?? null,
+    description: pkg.description ?? null,
+    published_at: pkg.date,
+    type: 'package' as const,
+    external_id: `npm:${pkg.name}`,
+  }))
+
+  const { data: upsertedPosts, error } = await supabase
+    .from('posts')
+    .upsert(postRows, { onConflict: 'external_id' })
+    .select('id, external_id')
+
+  if (error || !upsertedPosts) {
+    console.error('[npm] batch upsert error:', error)
+    return { upserted: 0 }
+  }
+
+  // 5. Batch insert metrics
+  const metricsRows = upsertedPosts.map((post) => {
+    const pkgName = post.external_id?.replace('npm:', '') ?? ''
+    const downloads = downloadMap.get(pkgName) ?? 0
+    return {
+      post_id: post.id,
+      downloads_weekly: downloads,
+      download_growth: 0,
+      upvotes: 0,
+      stars: 0,
+      comments: 0,
+      score: 0,
+    }
+  })
+
+  if (metricsRows.length > 0) {
+    const { error: metricsError } = await supabase.from('metrics_history').insert(metricsRows)
+    if (metricsError) {
+      console.error('[npm] metrics insert error:', metricsError)
+    }
+  }
+
+  console.log(`[npm] upserted ${upsertedPosts.length} packages`)
+  return { upserted: upsertedPosts.length }
 }
